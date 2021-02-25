@@ -1,0 +1,112 @@
+---
+title: "Plotly data exploration"
+output: html_notebook
+---
+Load data
+```{r}
+library(plotly)
+library(readr)
+MeasurementData_2209_co2<-read_csv("C:/Users/iced/Documents/HY/Year1/DS project/data/clean/MeasurementData_2209_co2.csv", col_types = cols(Room=col_character(), Hour=col_integer(), buildingId=col_character(), Value=col_double()))
+MeasurementData_2209_temp<-read_csv("C:/Users/iced/Documents/HY/Year1/DS project/data/clean/MeasurementData_2209_temp.csv", col_types = cols(Room=col_character(), Hour=col_integer(), buildingId=col_character(), Value=col_double()))
+MeasurementData_2410_co2<-read_csv("C:/Users/iced/Documents/HY/Year1/DS project/data/clean/MeasurementData_2410_co2.csv", col_types = cols(Room=col_character(), Hour=col_integer(), buildingId=col_character(), Value=col_double()))
+MeasurementData_2410_temp<-read_csv("C:/Users/iced/Documents/HY/Year1/DS project/data/clean/MeasurementData_2410_temp.csv", col_types = cols(Room=col_character(), Hour=col_integer(), buildingId=col_character(), Value=col_double()))
+
+```
+Aggregating data to check MAX CO2 level per hour
+```{r}
+library(tidyr)
+aggred1 <- aggregate(MeasurementData_2410_co2[4], list(Hour=MeasurementData_2410_co2$Hour, BuildingId=MeasurementData_2410_co2$buildingId), max)
+aggred2 <- aggregate(MeasurementData_2209_co2[4], list(Hour=MeasurementData_2209_co2$Hour, BuildingId=MeasurementData_2209_co2$buildingId), max)
+MaxCO2<-rbind(aggred1, aggred2)
+MaxCO2<-spread(MaxCO2,BuildingId,Value)
+colnames(MaxCO2) <- c("Hour", "Yliskylä", "Kaisaniemi")
+```
+1. Grouped chart. Max CO2
+```{r}
+barmax <- plot_ly(MaxCO2, x = ~Hour, y = ~Yliskylä, type = 'bar', name = 'Yliskylä', marker = list(color = c('#00cec9')))
+barmax <- barmax %>% add_trace(y = ~Kaisaniemi, name = 'Kaisaniemi', marker = list(color = c('#dfe6e9')))
+barmax <- barmax %>% layout(yaxis = list(title = 'Max CO2,ppm'), barmode = 'group', title='Maximum CO2 level')
+#,colorway = c('#f3cec9', '#e7a4b6', '#cd7eaf', '#a262a9', '#6f4d96', '#3d3b72', '#182844')
+
+barmax
+```
+check, ok
+```{r}
+max(MeasurementData_2410_co2[MeasurementData_2410_co2$Hour=='8',]$Value)
+```
+Aggregating data to check average CO2 level per hour, by Month
+```{r}
+aggred3 <- aggregate(MeasurementData_2410_co2[4], list(Hour=MeasurementData_2410_co2$Hour, BuildingId=MeasurementData_2410_co2$buildingId, Month=MeasurementData_2410_co2$Month), mean)
+aggred4 <- aggregate(MeasurementData_2209_co2[4], list(Hour=MeasurementData_2209_co2$Hour, BuildingId=MeasurementData_2209_co2$buildingId, Month=MeasurementData_2209_co2$Month), mean)
+AVGCO2<-rbind(aggred3, aggred4)
+AVGCO2<-spread(AVGCO2,BuildingId,Value)
+colnames(AVGCO2) <- c("Hour", "Month","Yliskylä", "Kaisaniemi")
+#September missing from KSN
+AVGCO2<-AVGCO2[AVGCO2$Month!="September",]
+```
+2.Average CO2 chart by Month
+```{r}
+fig1<-plot_ly(AVGCO2, x = ~Hour, y = ~Yliskylä,group=~Month, type = 'scatter',
+        mode = 'lines',
+        color = ~Month, colors = "Set3"
+)%>% layout(
+    xaxis = list(
+      showgrid = T
+    ),
+    yaxis = list(
+      showgrid = T,
+      title='CO2 level,ppm'
+    ))
+fig2<-plot_ly(AVGCO2, x = ~Hour, y = ~Kaisaniemi,group=~Month, type = 'scatter',
+        mode = 'lines',
+        color = ~Month, colors = "Set3"
+)%>% layout(
+    xaxis = list(
+      showgrid = T
+    ),
+    yaxis = list(
+      showgrid = T,
+      title='CO2 level,ppm'
+    ))
+fig <- subplot(fig1, fig2,nrows = 1, shareX =TRUE, shareY = TRUE)
+fig
+```
+Aggregating data to check average CO2 level per hour
+```{r}
+aggred5 <- aggregate(MeasurementData_2410_co2[4], list(Hour=MeasurementData_2410_co2$Hour, BuildingId=MeasurementData_2410_co2$buildingId), mean)
+aggred6 <- aggregate(MeasurementData_2209_co2[4], list(Hour=MeasurementData_2209_co2$Hour, BuildingId=MeasurementData_2209_co2$buildingId), mean)
+AVGCO2_2<-rbind(aggred5, aggred6)
+AVGCO2_2<-spread(AVGCO2_2,BuildingId,Value)
+colnames(AVGCO2_2) <- c("Hour","Yliskylä", "Kaisaniemi")
+
+```
+3.Average CO2 per hour chart (comparing KSN an YSK)
+```{r}
+fig4 <- plot_ly(AVGCO2_2, x = ~Hour, y = ~Yliskylä, name = 'Yliskylä', type = 'scatter', mode = 'lines',
+        line = list(color = c('#00cec9'), width = 3)) 
+fig4 <- fig4 %>% add_trace(y = ~Kaisaniemi, name = 'Kaisaniemi', line = list(color = c('#dfe6e9'), width = 3)) %>% layout(
+    yaxis = list(
+      showgrid = T,
+      title='CO2 level,ppm'
+    ),title='Average CO2 level')
+fig4
+```
+Aggregating data to check average temperature per hour
+```{r}
+aggred7 <- aggregate(MeasurementData_2410_temp[4], list(Hour=MeasurementData_2410_temp$Hour, BuildingId=MeasurementData_2410_temp$buildingId), mean)
+aggred8 <- aggregate(MeasurementData_2209_temp[4], list(Hour=MeasurementData_2209_temp$Hour, BuildingId=MeasurementData_2209_temp$buildingId), mean)
+AVGTEMP<-rbind(aggred7, aggred8)
+AVGTEMP<-spread(AVGTEMP,BuildingId,Value)
+colnames(AVGTEMP) <- c("Hour","Yliskylä", "Kaisaniemi")
+```
+4. Average temperature per hour chart (comparing KSN an YSK)
+```{r}
+fig5 <- plot_ly(AVGTEMP, x = ~Hour, y = ~Yliskylä, name = 'Yliskylä', type = 'scatter', mode = 'lines',
+        line = list(color = c('#00cec9'), width = 3)) 
+fig5 <- fig5 %>% add_trace(y = ~Kaisaniemi, name = 'Kaisaniemi', line = list(color = c('#dfe6e9'), width = 3)) %>% layout(
+    yaxis = list(
+      showgrid = T,
+      title='Temperature, °C'
+    ))
+fig5
+```
