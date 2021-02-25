@@ -1,0 +1,153 @@
+---
+title: "Clustering YSK"
+output: html_notebook
+---
+
+```{r}
+library("rjson")
+library(dplyr)
+library(tidyverse)
+# Give the input file name to the function.
+MeasurementData_2209 <- fromJSON(file ="C:/Users/iced/Documents/HY/Year1/DS project/data/2209.json") %>% as.data.frame #fromJSON()
+MeasurementData_2209<-gather(MeasurementData_2209,"Timestamp","Value",3:26110)
+```
+Remove metrics word
+```{r}
+MeasurementData_2209$Timestamp<-substring(MeasurementData_2209$Timestamp, 9, nchar(MeasurementData_2209$Timestamp))
+MeasurementData_2209$Timestamp<-as.POSIXct(as.numeric(as.character(MeasurementData_2209$Timestamp)),origin="1970-01-01",tz="GMT")
+```
+Divide data into CO2 and temp
+```{r}
+MeasurementData_2209_co2<-MeasurementData_2209[substring(MeasurementData_2209$fields,10,12)=='co2',]
+MeasurementData_2209_temp<-MeasurementData_2209[!substring(MeasurementData_2209$fields,10,12)=='co2',]
+MeasurementData_2209_temp<-MeasurementData_2209_temp[!substring(MeasurementData_2209_temp$fields,15,16)=='se',]
+```
+distinct check
+```{r}
+unique(MeasurementData_2209_temp$fields)
+```
+Adding more time columns (hour,weekday,month)
+```{r}
+library(chron)
+MeasurementData_2209_co2$Hour=hours(MeasurementData_2209_co2$Timestamp)
+MeasurementData_2209_co2$Weekday=weekdays(MeasurementData_2209_co2$Timestamp)
+MeasurementData_2209_co2$Month=months(MeasurementData_2209_co2$Timestamp)
+MeasurementData_2209_co2$Room<-substring(MeasurementData_2209_co2$fields,6,8)
+#same for temperature
+MeasurementData_2209_temp$Hour=hours(MeasurementData_2209_temp$Timestamp)
+MeasurementData_2209_temp$Weekday=weekdays(MeasurementData_2209_temp$Timestamp)
+MeasurementData_2209_temp$Month=months(MeasurementData_2209_temp$Timestamp)
+MeasurementData_2209_temp$Room<-substring(MeasurementData_2209_temp$fields,6,8)                                                                                                               
+```
+Subsetting data to be from 9 AM to 18 PM and from Monday to Friday
+```{r}
+MeasurementData_2209_co2 <- MeasurementData_2209_co2[ which(MeasurementData_2209_co2$Hour>=9
+& MeasurementData_2209_co2$Hour <= 18), ] #ok
+MeasurementData_2209_co2[which(MeasurementData_2209_co2$Weekday != "Saturday" & MeasurementData_2209_co2$Weekday != "Sunday"), ]
+MeasurementData_2209_temp <- MeasurementData_2209_temp[ which(MeasurementData_2209_temp$Hour>=8
+& MeasurementData_2209_temp$Hour <= 18), ] #ok
+MeasurementData_2209_temp<-MeasurementData_2209_temp[which(MeasurementData_2209_temp$Weekday != "Saturday" & MeasurementData_2209_temp$Weekday != "Sunday"), ]
+```
+Aggregating the data to be mean CO2 per hour
+```{r}
+aggred <- aggregate(MeasurementData_2209_co2[4], list(Room=MeasurementData_2209_co2$Room,Hour=MeasurementData_2209_co2$Hour), mean)
+```
+Same for temperature
+```{r}
+aggredtemp <- aggregate(MeasurementData_2209_temp[4], list(Room=MeasurementData_2209_temp$Room,Hour=MeasurementData_2209_temp$Hour), mean)
+```
+Plotting the dataset
+```{r}
+aggred %>%
+  ggplot( aes(x=Hour, y=Value, group=Room, color=Room)) +
+    geom_line() + ylab("Mean CO2 value")+theme_minimal()
+```
+Temperature plot
+```{r}
+aggredtemp %>%
+  ggplot( aes(x=Hour, y=Value, group=Room, color=Room)) +
+    geom_line() + ylab("Mean temperature")+theme_minimal()
+```
+Drop NAs to perform clustering
+```{r}
+aggred <- aggred %>%
+  select(Room, Hour, Value) %>%
+  drop_na() %>% # must drop NAs for clustering to work
+  glimpse()
+```
+Create a data frame using the spread() function that lists every DataPointID with the mean CO2 value per hour
+```{r}
+spread_aggred <- aggred %>%
+  spread(Room, Value)  %>%
+  glimpse()
+```
+Run the hierarchical cluster analysis
+Run the analysis by first transposing the dataframe into a matrix using t() and removing the hour variable using [-1] to remove the first row.
+
+Next, calculate the Euclidean distance metric using the dist() function. Then use the hclust() function and the method=”ward.D” argument, to run the hierarchical cluster analysis.
+
+```{r}
+CO2 <- t(spread_aggred[-1])
+CO2_dist <- dist(CO2, method="euclidean")  
+fitCO2 <- hclust(CO2_dist, method="ward.D")  
+```
+Plot the clusters
+Plot using base R’s plot() function and highlight a set number of clusters using rect.hclust() and the k= argument (number of clusters).
+```{r}
+plot(fitCO2)
+rect.hclust(fitCO2, k=3, border="cadetblue")
+```
+Same diagram rotated
+```{r}
+library(ggdendro)
+ggdendrogram(fitCO2, rotate = TRUE, theme_dendro = FALSE) +
+  theme_minimal() + xlab("") + ylab("")
+```
+Merge the clusters into the full dataset
+First, assign the four clusters to the data using cutree() and then, using tidy principles and after renaming columns and casting Rooms as characters, merge the clusters with the original dataset. 
+
+```{r}
+clustered_data <- cutree(fitCO2, k=3)
+clustered_data_tidy <- as.data.frame(as.table(clustered_data)) %>% glimpse()
+colnames(clustered_data_tidy) <- c("Room","cluster")
+clustered_data_tidy$Room <- as.character(clustered_data_tidy$Room)
+aggred$Room <- as.character(aggred$Room) #joining on char values
+```
+```{r}
+joined_clusters <- aggred %>%
+  inner_join(clustered_data_tidy, by = "Room") %>%
+  glimpse()
+```
+Output joined clusters for further plotly charts
+```{r}
+write.csv(joined_clusters,"C:/Users/iced/Documents/HY/Year1/DS project/data/joined_clustersYSK.csv", row.names = FALSE)
+```
+How many Rooms per cluster:
+```{r}
+table(clustered_data_tidy$cluster)
+```
+Visualizing clusters
+```{r}
+cluster1 <- joined_clusters %>% filter(cluster == "1") 
+
+cluster1 %>%
+  ggplot( aes(x=Hour, y=Value, group=Room, color=Room)) +
+    geom_line() + ylab("Mean CO2 value") + theme_minimal()
+```
+```{r}
+cluster2 <- joined_clusters %>% filter(cluster == "2") 
+
+cluster2 %>%
+  ggplot( aes(x=Hour, y=Value, group=Room, color=Room)) +
+    geom_line() + ylab("Mean CO2 value") + theme_minimal()
+```
+
+```{r}
+cluster3 <- joined_clusters %>% filter(cluster == "3") 
+
+cluster3 %>%
+  ggplot( aes(x=Hour, y=Value, group=Room, color=Room)) +
+    geom_line() + ylab("Mean CO2 value") + theme_minimal()
+```
+
+
